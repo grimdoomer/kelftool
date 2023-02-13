@@ -18,14 +18,25 @@
 #define __KEYSTORE_H__
 
 #include <string>
+#include "SimpleIni.h"
 
 #define KEYSTORE_ERROR_OPEN_FAILED        -1
 #define KEYSTORE_ERROR_LINE_NOT_KEY_VALUE -2
 #define KEYSTORE_ERROR_ODD_LEN_VALUE      -3
 #define KEYSTORE_ERROR_MISSING_KEY        -4
 
+enum KeyStoreType : int
+{
+    Retail = 0,
+    Dev,
+    Proto,
+    Arcade,
+    Max,
+};
+
 class KeyStore
 {
+    KeyStoreType type;
     std::string SignatureMasterKey;
     std::string SignatureHashKey;
     std::string KbitMasterKey;
@@ -40,8 +51,8 @@ class KeyStore
     std::string ArcadeKc;
 
 public:
-    int Load(std::string filename);
 
+    KeyStoreType GetType() { return type; }
     std::string GetSignatureMasterKey() { return SignatureMasterKey; }
     std::string GetSignatureHashKey() { return SignatureHashKey; }
     std::string GetKbitMasterKey() { return KbitMasterKey; }
@@ -55,7 +66,24 @@ public:
     std::string GetArcadeKbit() { return ArcadeKbit; }
     std::string GetArcadeKc() { return ArcadeKc; }
 
+    bool IsValid();
+
+    friend class KeyStoreManager;
+};
+
+class KeyStoreManager
+{
+    KeyStore keystores[(int)KeyStoreType::Max];
+
+public:
+    int Load(std::string filename);
+
     static std::string getErrorString(int err);
+
+    KeyStore& GetKeyStore(KeyStoreType type)
+    {
+        return this->keystores[(int)type];
+    }
 };
 
 #endif

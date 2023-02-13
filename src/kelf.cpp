@@ -257,7 +257,8 @@ int Kelf::LoadKelf(const std::string filename)
         printf(" %02X", (unsigned char)Kc[i]);
 
     // arcade
-    if (ks.GetArcadeKbit().size() && ks.GetArcadeKc().size()) {
+    if (ks.GetType() == KeyStoreType::Arcade)
+    {
         memcpy(Kbit.data(), ks.GetArcadeKbit().data(), 16);
         memcpy(Kc.data(), ks.GetArcadeKc().data(), 16);
     }
@@ -270,40 +271,7 @@ int Kelf::LoadKelf(const std::string filename)
     }
 
     fread(&bitTable, 1, BitTableSize, f);
-
     TdesCbcCfb64Decrypt((uint8_t *)&bitTable, (uint8_t *)&bitTable, BitTableSize, (uint8_t *)Kbit.data(), 2, ks.GetContentTableIV().data());
-    printf("bitTable.HeaderSize    = %#X\n", bitTable.HeaderSize);
-    printf("bitTable.BlockCount    = %d\n", bitTable.BlockCount);
-    printf("bitTable.gap           =");
-    for (unsigned int i = 0; i < 3; ++i)
-        printf(" %02X", (unsigned char)bitTable.gap[i]);
-    printf("\n                         Size        Signature           Flags\n");
-    for (unsigned int i = 0; i < bitTable.BlockCount; ++i) {
-        printf("    bitTable.Blocks[%d] = %08X    ", (int)i, bitTable.Blocks[i].Size);
-        for (size_t j = 0; j < 8; ++j)
-            printf("%02X", (unsigned char)bitTable.Blocks[i].Signature[j]);
-        switch (bitTable.Blocks[i].Flags) {
-            case 0:
-                printf("    0 (not encrypted, not signed)\n");
-                break;
-            case 1:
-                printf("    1 (encrypted only)\n");
-                break;
-            case 2:
-                printf("    2 (signed only)\n");
-                break;
-            case 3:
-                printf("    3 (encrypted and signed)\n");
-                break;
-            default:
-                printf("    %08X (unknown set of flags\n)", bitTable.Blocks[i].Flags);
-                printf("This value is unknown.\n");
-                printf("Please upload file and post under that issue:\n");
-                printf("https://github.com/xfwcfw/kelftool/issues/1\n");
-                break;
-        }
-    }
-
 
     std::string BitTableSignature;
     BitTableSignature.resize(8);
@@ -316,6 +284,38 @@ int Kelf::LoadKelf(const std::string filename)
     if (BitTableSignature != GetBitTableSignature()) {
         fclose(f);
         return KELF_ERROR_INVALID_BIT_TABLE_SIGNATURE;
+    }
+
+    printf("bitTable.HeaderSize    = %#X\n", bitTable.HeaderSize);
+    printf("bitTable.BlockCount    = %d\n", bitTable.BlockCount);
+    printf("bitTable.gap           =");
+    for (unsigned int i = 0; i < 3; ++i)
+        printf(" %02X", (unsigned char)bitTable.gap[i]);
+    printf("\n                         Size        Signature           Flags\n");
+    for (unsigned int i = 0; i < bitTable.BlockCount; ++i) {
+        printf("    bitTable.Blocks[%d] = %08X    ", (int)i, bitTable.Blocks[i].Size);
+        for (size_t j = 0; j < 8; ++j)
+            printf("%02X", (unsigned char)bitTable.Blocks[i].Signature[j]);
+        switch (bitTable.Blocks[i].Flags) {
+        case 0:
+            printf("    0 (not encrypted, not signed)\n");
+            break;
+        case 1:
+            printf("    1 (encrypted only)\n");
+            break;
+        case 2:
+            printf("    2 (signed only)\n");
+            break;
+        case 3:
+            printf("    3 (encrypted and signed)\n");
+            break;
+        default:
+            printf("    %08X (unknown set of flags\n)", bitTable.Blocks[i].Flags);
+            printf("This value is unknown.\n");
+            printf("Please upload file and post under that issue:\n");
+            printf("https://github.com/xfwcfw/kelftool/issues/1\n");
+            break;
+        }
     }
 
     std::string RootSignature;
@@ -350,7 +350,7 @@ int Kelf::LoadKelf(const std::string filename)
     return 0;
 }
 
-int Kelf::SaveKelf(const std::string filename, int headerid)
+int Kelf::SaveKelf(const std::string filename, UserHeaderId headerid)
 {
     FILE *f = fopen(filename.c_str(), "wb");
     if (f == NULL) {
@@ -362,16 +362,20 @@ int Kelf::SaveKelf(const std::string filename, int headerid)
     static uint8_t *USER_HEADER;
 
     switch (headerid) {
-        case 0:
+        case UserHeaderId::FreeMcBoot:
             USER_HEADER = USER_HEADER_FMCB;
             break;
 
-        case 1:
+        case UserHeaderId::FreeHDBoot:
             USER_HEADER = USER_HEADER_FHDB;
             break;
 
-        case 2:
+        case UserHeaderId::MBR:
             USER_HEADER = USER_HEADER_MBR;
+            break;
+
+        case UserHeaderId::BootMcCade:
+            USER_HEADER = USER_HEADER_BMCC;
             break;
 
         default:
@@ -418,7 +422,7 @@ int Kelf::SaveKelf(const std::string filename, int headerid)
     return 0;
 }
 
-int Kelf::LoadContent(const std::string filename, int headerid)
+int Kelf::LoadContent(const std::string filename, UserHeaderId headerid)
 {
     FILE *f = fopen(filename.c_str(), "rb");
     if (f == NULL) {
@@ -434,13 +438,13 @@ int Kelf::LoadContent(const std::string filename, int headerid)
     // TODO: encrypted Kbit hold some useful data
     static uint8_t *USER_Kbit;
     switch (headerid) {
-        case 0:
+        case UserHeaderId::FreeMcBoot:
             USER_Kbit = USER_Kbit_FMCB;
             break;
-        case 1:
+        case UserHeaderId::FreeHDBoot:
             USER_Kbit = USER_Kbit_FHDB;
             break;
-        case 2:
+        case UserHeaderId::MBR:
             USER_Kbit = USER_Kbit_MBR;
             break;
         default:
@@ -458,7 +462,8 @@ int Kelf::LoadContent(const std::string filename, int headerid)
     std::fill(Kc.data(), Kc.data() + 16, 0x00);
 
     // arcade
-    if (ks.GetArcadeKbit().size() && ks.GetArcadeKc().size()) {
+    if (ks.GetType() == KeyStoreType::Arcade)
+    {
         memcpy(Kbit.data(), ks.GetArcadeKbit().data(), 16);
         memcpy(Kc.data(), ks.GetArcadeKc().data(), 16);
     }

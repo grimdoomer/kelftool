@@ -52,67 +52,122 @@ std::string hex2bin(const std::string &src)
     return hex;
 }
 
-int KeyStore::Load(std::string filename)
+KeyStoreType KeyStoreNameToType(std::string name)
 {
-    std::ifstream infile(filename);
-    if (infile.fail())
-        return KEYSTORE_ERROR_OPEN_FAILED;
+    if (name == "Retail")
+        return KeyStoreType::Retail;
+    else if (name == "Dev")
+        return KeyStoreType::Dev;
+    else if (name == "Proto")
+        return KeyStoreType::Proto;
+    else if (name == "Arcade")
+        return KeyStoreType::Arcade;
+    else
+        return KeyStoreType::Max;
+}
 
-    std::string line;
-    while (std::getline(infile, line)) {
-        std::vector<std::string> tokens = split(line, '=');
-
-
-        if (tokens.size() != 2)
-
-            return KEYSTORE_ERROR_LINE_NOT_KEY_VALUE;
-
-
-        std::string key   = tokens[0];
-        std::string value = tokens[1];
-
-        if (value.size() % 2 != 0)
-            return KEYSTORE_ERROR_ODD_LEN_VALUE;
-
-        value = hex2bin(value);
-
-        if (key == "MG_SIG_MASTER_KEY")
-            SignatureMasterKey = value;
-        if (key == "MG_SIG_HASH_KEY")
-            SignatureHashKey = value;
-        if (key == "MG_KBIT_MASTER_KEY")
-            KbitMasterKey = value;
-        if (key == "MG_KBIT_IV")
-            KbitIV = value;
-        if (key == "MG_KC_MASTER_KEY")
-            KcMasterKey = value;
-        if (key == "MG_KC_IV")
-            KcIV = value;
-        if (key == "MG_ROOTSIG_MASTER_KEY")
-            RootSignatureMasterKey = value;
-        if (key == "MG_ROOTSIG_HASH_KEY")
-            RootSignatureHashKey = value;
-        if (key == "MG_CONTENT_TABLE_IV")
-            ContentTableIV = value;
-        if (key == "MG_CONTENT_IV")
-            ContentIV = value;
-        if (key == "ARCADE_KBIT")
-            ArcadeKbit = value;
-        if (key == "ARCADE_KC")
-            ArcadeKc = value;
+bool KeyStore::IsValid()
+{
+    // Check if all required keys are set.
+    if (this->SignatureMasterKey.size() == 0 || this->SignatureHashKey.size() == 0 ||
+        this->KbitMasterKey.size() == 0 || this->KbitIV.size() == 0 ||
+        this->KcMasterKey.size() == 0 || this->KcIV.size() == 0 ||
+        this->RootSignatureMasterKey.size() == 0 || this->RootSignatureHashKey.size() == 0 ||
+        this->ContentTableIV.size() == 0 || this->ContentIV.size() == 0)
+    {
+        return false;
+    }
+    else if (this->type == KeyStoreType::Arcade && (this->ArcadeKbit.size() == 0 || this->ArcadeKc.size() == 0))
+    {
+        return false;
     }
 
-    if (SignatureMasterKey.size() == 0 || SignatureHashKey.size() == 0 ||
-        KbitMasterKey.size() == 0 || KbitIV.size() == 0 ||
-        KcMasterKey.size() == 0 || KcIV.size() == 0 ||
-        RootSignatureMasterKey.size() == 0 || RootSignatureHashKey.size() == 0 ||
-        ContentTableIV.size() == 0 || ContentIV.size() == 0)
-        return KEYSTORE_ERROR_MISSING_KEY;
+    return true;
+}
+
+int KeyStoreManager::Load(std::string filename)
+{
+    CSimpleIniA iniParser;
+
+    // Open and parse the ini keystore file.
+    SI_Error ret = iniParser.LoadFile(filename.c_str());
+    if (ret < 0)
+        return KEYSTORE_ERROR_OPEN_FAILED;
+
+    // Get a list of all sections.
+    CSimpleIniA::TNamesDepend sections;
+    iniParser.GetAllSections(sections);
+
+    // Loop and create a new keystore for each section.
+    for (auto section = sections.begin(); section != sections.end(); section++)
+    {
+        // Get the keystore type for this section.
+        KeyStoreType type = KeyStoreNameToType(section->pItem);
+        if (type == KeyStoreType::Max)
+            continue;
+
+        // Get all the keys in the section.
+        CSimpleIniA::TNamesDepend sectionKeys;
+        iniParser.GetAllKeys(section->pItem, sectionKeys);
+
+        // Initialize the keystore and parse key values.
+        KeyStore& keystore = this->keystores[(int)type];
+        keystore.type = type;
+
+        for (auto keypair = sectionKeys.begin(); keypair != sectionKeys.end(); keypair++)
+        {
+            std::string key = keypair->pItem;
+            std::string value = iniParser.GetValue(section->pItem, keypair->pItem);
+
+            if (value.size() % 2 != 0)
+                return KEYSTORE_ERROR_ODD_LEN_VALUE;
+
+            value = hex2bin(value);
+
+            if (key == "MG_SIG_MASTER_KEY")
+                keystore.SignatureMasterKey = value;
+            if (key == "MG_SIG_HASH_KEY")
+                keystore.SignatureHashKey = value;
+            if (key == "MG_KBIT_MASTER_KEY")
+                keystore.KbitMasterKey = value;
+            if (key == "MG_KBIT_IV")
+                keystore.KbitIV = value;
+            if (key == "MG_KC_MASTER_KEY")
+                keystore.KcMasterKey = value;
+            if (key == "MG_KC_IV")
+                keystore.KcIV = value;
+            if (key == "MG_ROOTSIG_MASTER_KEY")
+                keystore.RootSignatureMasterKey = value;
+            if (key == "MG_ROOTSIG_HASH_KEY")
+                keystore.RootSignatureHashKey = value;
+            if (key == "MG_CONTENT_TABLE_IV")
+                keystore.ContentTableIV = value;
+            if (key == "MG_CONTENT_IV")
+                keystore.ContentIV = value;
+
+            if (type == KeyStoreType::Arcade)
+            {
+                if (key == "ARCADE_KBIT")
+                    keystore.ArcadeKbit = value;
+                if (key == "ARCADE_KC")
+                    keystore.ArcadeKc = value;
+            }
+        }
+
+        if (keystore.IsValid() == false)
+        {
+            if (keystore.GetType() != KeyStoreType::Arcade)
+                printf("Key store section '%s' is missing one or required more keys\n", section->pItem);
+            else
+                printf("Key store section '%s' is missing one or required more keys, arcade also requires ARCADE_KBIT and ARCADE_KC\n", section->pItem);
+            return KEYSTORE_ERROR_MISSING_KEY;
+        }
+    }
 
     return 0;
 }
 
-std::string KeyStore::getErrorString(int err)
+std::string KeyStoreManager::getErrorString(int err)
 {
     switch (err) {
         case 0:

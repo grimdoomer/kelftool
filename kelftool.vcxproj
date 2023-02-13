@@ -18,6 +18,7 @@
   <ItemGroup>
     <ClInclude Include="src\kelf.h" />
     <ClInclude Include="src\keystore.h" />
+    <ClInclude Include="src\SimpleIni.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{C941BA3B-0C6A-463A-85F9-6B22832C8C6D}</ProjectGuid>
@@ -71,11 +72,13 @@
       <PreprocessorDefinitions>WIN32;_CRT_SECURE_NO_WARNINGS;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalIncludeDirectories>D:\Common\Private\XeCrypt_src\0common</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>libcrypto32MTd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libeay32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>D:\Common\Private\XeCrypt_src\0common\OpenSSL</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">

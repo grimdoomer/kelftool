@@ -16,40 +16,82 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <filesystem>
 
 #include "keystore.h"
 #include "kelf.h"
+
+#ifdef WIN32
+#include <Windows.h>
+#endif
+
+KeyStoreManager ksManager;
 
 // TODO: implement load/save kelf header configuration for byte-perfect encryption, decryption
 
 std::string getKeyStorePath()
 {
+    char ModulePath[MAX_PATH] = { 0 };
+
 #if defined(__linux__) || defined(__APPLE__)
+    // readlink("/proc/self/exe", buf, bufsize)
     return std::string(getenv("HOME")) + "/PS2KEYS.dat";
 #else
-    return std::string(getenv("USERPROFILE")) + "\\PS2KEYS.dat";
+    GetModuleFileNameA(NULL, ModulePath, ARRAYSIZE(ModulePath));
 #endif
+
+    std::filesystem::path appDirectory = ModulePath;
+
+    return appDirectory.parent_path().string() + "\\PS2KEYS.dat";
+}
+
+KeyStoreType GetKeyStoreType(int argc, char** argv)
+{
+    for (int i = 0; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-k") == 0 && i + 1 < argc)
+        {
+            if (strcmp(argv[i + 1], "retail") == 0)
+                return KeyStoreType::Retail;
+            else if (strcmp(argv[i + 1], "dev") == 0)
+                return KeyStoreType::Dev;
+            else if (strcmp(argv[i + 1], "proto") == 0)
+                return KeyStoreType::Proto;
+            else if (strcmp(argv[i + 1], "arcade") == 0)
+                return KeyStoreType::Arcade;
+            else
+            {
+                printf("Invalid keystore type '%s', options are: retail, dev, proto, arcade\n", argv[i + 1]);
+                return (KeyStoreType)-1;
+            }
+        }
+    }
+
+    // Default to retail is not argument is provided.
+    return KeyStoreType::Retail;
 }
 
 int decrypt(int argc, char **argv)
 {
+    KeyStoreManager ks;
+
     if (argc < 3) {
-        printf("%s decrypt <input> <output>\n", argv[0]);
+        printf("%s decrypt <input> <output> [-k <keystore>]\n", argv[0]);
         return -1;
     }
 
-    KeyStore ks;
+    KeyStoreType keystoreType = GetKeyStoreType(argc, argv);    
     int ret = ks.Load(getKeyStorePath());
     if (ret != 0) {
         // try to load keys from working directory
         ret = ks.Load("./PS2KEYS.dat");
         if (ret != 0) {
-            printf("Failed to load keystore: %d - %s\n", ret, KeyStore::getErrorString(ret).c_str());
+            printf("Failed to load keystore: %d - %s\n", ret, KeyStoreManager::getErrorString(ret).c_str());
             return ret;
         }
     }
 
-    Kelf kelf(ks);
+    Kelf kelf(ks.GetKeyStore(keystoreType));
     ret = kelf.LoadKelf(argv[1]);
     if (ret != 0) {
         printf("Failed to LoadKelf %d!\n", ret);
@@ -67,41 +109,43 @@ int decrypt(int argc, char **argv)
 int encrypt(int argc, char **argv)
 {
 
-    int headerid = -1;
+    UserHeaderId headerid = (UserHeaderId)-1;
+    KeyStoreManager ks;
 
     if (argc < 4) {
-        printf("%s encrypt <headerid> <input> <output>\n", argv[0]);
-        printf("<headerid>: fmcb, fhdb, mbr\n");
+        printf("%s encrypt <headerid> <input> <output> [-k <keystore>]\n", argv[0]);
+        printf("<headerid>: fmcb, fhdb, mbr, bmcc\n");
         return -1;
     }
 
+    KeyStoreType keystoreType = GetKeyStoreType(argc, argv);
+
     if (strcmp("fmcb", argv[1]) == 0)
-        headerid = 0;
+        headerid = UserHeaderId::FreeMcBoot;
+    else if (strcmp("fhdb", argv[1]) == 0)
+        headerid = UserHeaderId::FreeHDBoot;
+    else if (strcmp("mbr", argv[1]) == 0)
+        headerid = UserHeaderId::MBR;
+    else if (strcmp("bmcc", argv[1]) == 0)
+        headerid = UserHeaderId::BootMcCade;
 
-    if (strcmp("fhdb", argv[1]) == 0)
-        headerid = 1;
-
-    if (strcmp("mbr", argv[1]) == 0)
-        headerid = 2;
-
-    if (headerid == -1) {
+    if (keystoreType != KeyStoreType::Arcade && headerid == -1) {
 
         printf("Invalid header: %s\n", argv[1]);
         return -1;
     }
 
-    KeyStore ks;
     int ret = ks.Load(getKeyStorePath());
     if (ret != 0) {
         // try to load keys from working directory
         ret = ks.Load("./PS2KEYS.dat");
         if (ret != 0) {
-            printf("Failed to load keystore: %d - %s\n", ret, KeyStore::getErrorString(ret).c_str());
+            printf("Failed to load keystore: %d - %s\n", ret, KeyStoreManager::getErrorString(ret).c_str());
             return ret;
         }
     }
 
-    Kelf kelf(ks);
+    Kelf kelf(ks.GetKeyStore(keystoreType));
     ret = kelf.LoadContent(argv[2], headerid);
     if (ret != 0) {
         printf("Failed to LoadContent!\n");
